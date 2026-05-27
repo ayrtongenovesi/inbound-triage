@@ -1,0 +1,328 @@
+{
+  "name": "Speed to Lead Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "speed-to-lead",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "0e4c8d70-a57e-4c74-961d-70cb856d3580",
+      "name": "Lead Intake Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -880,
+        120
+      ],
+      "webhookId": "speed-to-lead-demo-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.body ?? $json;\n\nconst normalized = {\n  lead_id: raw.lead_id || `lead_${Date.now()}`,\n  created_at: raw.created_at || new Date().toISOString(),\n  source: raw.source || 'unknown',\n  name: raw.name || 'Unknown lead',\n  email: raw.email || '',\n  phone: raw.phone || '',\n  company: raw.company || '',\n  message: raw.message || '',\n  service_interest: raw.service_interest || 'unknown'\n};\n\nconst hasContact = Boolean(normalized.email || normalized.phone);\n\nreturn [\n  {\n    json: {\n      ...normalized,\n      has_contact_info: hasContact,\n      normalized_for_ai: `Name: ${normalized.name}\\nCompany: ${normalized.company}\\nSource: ${normalized.source}\\nInterest: ${normalized.service_interest}\\nMessage: ${normalized.message}`\n    }\n  }\n];"
+      },
+      "id": "1ded265d-1a7f-4cad-9201-51bf463d87fa",
+      "name": "Normalize Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -640,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_OPENAI_API_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  model: 'gpt-4.1-mini',\n  temperature: 0.2,\n  messages: [\n    {\n      role: 'system',\n      content: 'Classify inbound leads for a small business. Return only valid JSON with keys: priority, intent, suggested_reply, crm_status, owner_notification. priority must be high, medium, or low. Write suggested_reply in neutral Latin American Spanish.'\n    },\n    {\n      role: 'user',\n      content: $json.normalized_for_ai\n    }\n  ]\n} }}",
+        "options": {}
+      },
+      "id": "4ed55d33-dc88-49cc-93fa-711de8c2720a",
+      "name": "Classify Lead with LLM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -400,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $('Normalize Lead').first().json;\nconst response = $json;\n\nlet parsed;\ntry {\n  const content = response.choices?.[0]?.message?.content || '{}';\n  parsed = JSON.parse(content);\n} catch (error) {\n  parsed = {\n    priority: lead.has_contact_info ? 'medium' : 'low',\n    intent: lead.service_interest || 'unknown_intent',\n    suggested_reply: `Hola ${lead.name}, gracias por escribir. Recibi tu consulta y la voy a revisar para responderte con una propuesta concreta.`,\n    crm_status: lead.has_contact_info ? 'new_needs_review' : 'needs_contact_info',\n    owner_notification: `New lead from ${lead.company || lead.name}. LLM parsing failed, manual review needed.`\n  };\n}\n\nreturn [\n  {\n    json: {\n      ...lead,\n      priority: parsed.priority || 'medium',\n      intent: parsed.intent || 'unknown_intent',\n      suggested_reply: parsed.suggested_reply,\n      crm_status: parsed.crm_status || 'new_needs_review',\n      owner_notification: parsed.owner_notification || `New lead from ${lead.company || lead.name}`,\n      processed_at: new Date().toISOString()\n    }\n  }\n];"
+      },
+      "id": "6f9bb909-d640-41e9-8e26-a227fc612db6",
+      "name": "Build Lead Record",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_GOOGLE_SHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Leads"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lead_id": "={{ $json.lead_id }}",
+            "created_at": "={{ $json.created_at }}",
+            "source": "={{ $json.source }}",
+            "name": "={{ $json.name }}",
+            "email": "={{ $json.email }}",
+            "phone": "={{ $json.phone }}",
+            "company": "={{ $json.company }}",
+            "message": "={{ $json.message }}",
+            "intent": "={{ $json.intent }}",
+            "priority": "={{ $json.priority }}",
+            "status": "={{ $json.crm_status }}",
+            "owner_notes": "={{ $json.owner_notification }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "102f0269-bd99-4695-aebd-534ef0a953b8",
+      "name": "Append Lead to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        80,
+        120
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "subject": "={{ `Re: consulta de ${$json.company || $json.name}` }}",
+        "message": "={{ $json.suggested_reply }}",
+        "toList": "={{ $json.email }}",
+        "additionalFields": {}
+      },
+      "id": "da9bc597-e193-4a71-9af5-82ee21d8d712",
+      "name": "Create Gmail Draft",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        320,
+        20
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "YOUR_INTERNAL_NOTIFICATION_WEBHOOK",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  text: $json.owner_notification,\n  lead_id: $json.lead_id,\n  priority: $json.priority,\n  intent: $json.intent,\n  next_action: 'Review Gmail draft and reply quickly'\n} }}",
+        "options": {}
+      },
+      "id": "5dd3cc70-5048-47a3-b26d-65a40556d5ff",
+      "name": "Notify Owner",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $('Build Lead Record').first().json;\n\nreturn [\n  {\n    json: {\n      accepted: true,\n      lead_id: lead.lead_id,\n      priority: lead.priority,\n      intent: lead.intent,\n      crm_status: lead.crm_status,\n      message: 'Lead received and routed for fast follow-up.'\n    }\n  }\n];"
+      },
+      "id": "846cda04-2e06-49f8-845d-e289d11ba493",
+      "name": "Create Response Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "4e1521d7-7538-4d89-b719-09a3a3e15b81",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        800,
+        120
+      ]
+    }
+  ],
+  "connections": {
+    "Lead Intake Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Lead": {
+      "main": [
+        [
+          {
+            "node": "Classify Lead with LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Lead with LLM": {
+      "main": [
+        [
+          {
+            "node": "Build Lead Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Lead Record": {
+      "main": [
+        [
+          {
+            "node": "Append Lead to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Lead to Sheet": {
+      "main": [
+        [
+          {
+            "node": "Create Gmail Draft",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Gmail Draft": {
+      "main": [
+        [
+          {
+            "node": "Create Response Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Owner": {
+      "main": [
+        [
+          {
+            "node": "Create Response Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Response Payload": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {
+    "Lead Intake Webhook": [
+      {
+        "json": {
+          "body": {
+            "lead_id": "lead_001",
+            "created_at": "2026-05-27T13:35:00-03:00",
+            "source": "landing_form",
+            "name": "Mariana Lopez",
+            "email": "mariana@example.com",
+            "phone": "+54 9 341 000 0000",
+            "company": "Clinica Norte",
+            "message": "Necesitamos responder consultas de pacientes mas rapido y ordenar turnos que entran por formulario.",
+            "service_interest": "automation"
+          }
+        }
+      }
+    ]
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "tags": [
+    {
+      "name": "portfolio"
+    },
+    {
+      "name": "speed-to-lead"
+    }
+  ]
+}
