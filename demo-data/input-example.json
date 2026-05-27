@@ -1,0 +1,11 @@
+{
+  "lead_id": "lead_001",
+  "created_at": "2026-05-27T13:35:00-03:00",
+  "source": "landing_form",
+  "name": "Mariana Lopez",
+  "email": "mariana@example.com",
+  "phone": "+54 9 341 000 0000",
+  "company": "Clinica Norte",
+  "message": "Necesitamos responder consultas de pacientes mas rapido y ordenar turnos que entran por formulario.",
+  "service_interest": "automation"
+}

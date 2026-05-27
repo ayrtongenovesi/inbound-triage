@@ -1,0 +1,8 @@
+{
+  "lead_id": "lead_001",
+  "priority": "high",
+  "intent": "operations_automation",
+  "suggested_reply": "Hola Mariana, gracias por escribir. Por lo que contas, el cuello de botella parece estar en responder rapido y ordenar turnos entrantes. Te puedo proponer una automatizacion que registre cada consulta, responda al instante y avise al equipo cuando haya un caso prioritario. Te comparto dos horarios para una llamada corta.",
+  "crm_status": "new_qualified",
+  "owner_notification": "High priority lead from Clinica Norte: operations automation, patient inquiries, scheduling."
+}
